@@ -3,24 +3,59 @@ package main
 import (
 	"fmt"
 	"net"
+	"sync"
 )
 
 type Server struct {
-	ID   string
-	Port int
+	ID        string
+	Port      int
+	Onlinemap map[string]*User
+	mapLock   sync.RWMutex
+	Message   chan string
 }
 
 func NewServer(id string, port int) *Server {
 	server := &Server{
-		ID:   id,
-		Port: port,
+		ID:        id,
+		Port:      port,
+		Onlinemap: make(map[string]*User),
+		Message:   make(chan string),
 	}
 	return server
 }
 
+// 监听Messge channel的协程给在线用户的chann发消息
+func (this *Server) ListenMessager() {
+	for {
+		msg := <-this.Message
+		//将msg发送给全部在线user
+		this.mapLock.Lock()
+		for _, cli := range this.Onlinemap {
+			cli.C <- msg
+		}
+		this.mapLock.Unlock()
+	}
+}
+
+// 广播消息的方法
+func (this *Server) BroadCast(user *User, msg string) {
+	sendmsg := "[" + user.Addr + "]" + user.Name + ":" + msg
+	this.Message <- sendmsg
+}
+
 func (this *Server) Handler(conn net.Conn) {
-	//
-	fmt.Println("连接创建成功")
+	//创建用户
+	user := NewUser(conn)
+	//将用户加入map中
+	this.mapLock.Lock()
+	this.Onlinemap[user.Name] = user
+	this.mapLock.Unlock()
+
+	//向在线用户广播
+	this.BroadCast(user, "已上线")
+
+	select {}
+
 }
 
 func (this *Server) Start() {
@@ -32,6 +67,9 @@ func (this *Server) Start() {
 	}
 	//defer close
 	defer listener.Close()
+
+	go this.ListenMessager()
+
 	for {
 		//accept
 		conn, err := listener.Accept()
