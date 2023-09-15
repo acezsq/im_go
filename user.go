@@ -5,11 +5,10 @@ import (
 )
 
 type User struct {
-	Name string
-	Addr string
-	C    chan string
-	conn net.Conn
-
+	Name   string
+	Addr   string
+	C      chan string
+	conn   net.Conn
 	server *Server
 }
 
@@ -53,9 +52,23 @@ func (this *User) Offline() {
 	this.server.BroadCast(this, "下线")
 }
 
+func (this *User) SendMsg(msg string) {
+	this.conn.Write([]byte(msg + "\n"))
+}
+
 // 用户处理消息的业务
 func (this *User) DoMessage(msg string) {
-	this.server.BroadCast(this, msg)
+	if msg == "who" {
+		//查询当前用户都有哪些
+		this.server.mapLock.Lock()
+		for _, user := range this.server.Onlinemap {
+			onlineMsg := "[" + user.Addr + "]" + user.Name + "在线"
+			this.SendMsg(onlineMsg)
+		}
+		this.server.mapLock.Unlock()
+	} else {
+		this.server.BroadCast(this, msg)
+	}
 }
 
 // 监听当前user的channel的go协程，一但有消息发送给客户端
